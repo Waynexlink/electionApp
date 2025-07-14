@@ -1,8 +1,8 @@
 import mongoose from 'mongoose'
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/voting-platform'
+const MONGODB_URI = process.env.MONGODB_URI
 
-if (!MONGODB_URI) {
+if (!MONGODB_URI || MONGODB_URI.length === 0) {
   throw new Error('Please define the MONGODB_URI environment variable inside .env.local')
 }
 
@@ -30,7 +30,9 @@ async function connectDB() {
 
   try {
     cached.conn = await cached.promise
+    console.log('✅ MongoDB connected successfully')
   } catch (e) {
+    console.error('❌ MongoDB connection failed:', e)
     cached.promise = null
     throw e
   }

@@ -10,7 +10,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, Mail, Lock, Eye, EyeOff, Info } from "lucide-react"
 import Link from "next/link"
-import { authService } from "@/lib/auth" // Import authService
 
 export function LoginForm() {
   const [email, setEmail] = useState("")
@@ -26,27 +25,34 @@ export function LoginForm() {
     setError("")
 
     try {
-      const { user, error: authError } = await authService.signIn(email, password)
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      })
 
-      if (authError) {
-        setError(authError)
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.error || 'Login failed')
         return
       }
 
-      if (user) {
-        authService.setCurrentUser(user) // Store user session in localStorage for demo
-        // Redirect based on role
-        if (user.role === "admin") {
-          router.push("/admin")
-        } else {
-          router.push("/dashboard")
-        }
+      // Store user data and token
+      localStorage.setItem('currentUser', JSON.stringify(data.user))
+      localStorage.setItem('authToken', data.token)
+
+      // Redirect based on role
+      if (data.user.role === 'admin') {
+        router.push('/admin')
       } else {
-        setError("Login failed. Please try again.")
+        router.push('/dashboard')
       }
     } catch (err) {
-      console.error("Login error:", err)
-      setError("An unexpected error occurred during login.")
+      console.error('Login error:', err)
+      setError('An unexpected error occurred during login.')
     } finally {
       setLoading(false)
     }

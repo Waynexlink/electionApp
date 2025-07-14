@@ -1,22 +1,18 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { supabaseOperations } from "@/lib/supabase"
+import { databaseOperations } from "@/lib/database"
 
 export async function POST(request: NextRequest) {
   try {
     const voteData = await request.json()
-
-    // Check if user has already voted for this post
-    const existingVotes = await supabaseOperations.getUserVotes(voteData.user_id)
-    const hasVoted = existingVotes.some((vote) => vote.post_id === voteData.post_id)
-
-    if (hasVoted) {
-      return NextResponse.json({ error: "User has already voted for this position" }, { status: 400 })
-    }
-
-    const vote = await supabaseOperations.submitVote(voteData)
+    const vote = await databaseOperations.submitVote(voteData)
     return NextResponse.json(vote)
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error submitting vote:", error)
+    
+    if (error.message === "User has already voted for this position") {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
+    
     return NextResponse.json({ error: "Failed to submit vote" }, { status: 500 })
   }
 }

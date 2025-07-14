@@ -11,7 +11,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
 import { Loader2, CheckCircle, User, Mail, Lock, Eye, EyeOff, Info, AlertTriangle } from "lucide-react"
 import Link from "next/link"
-import { authService } from "@/lib/auth" // Import authService
 
 export function RegisterForm() {
   const [formData, setFormData] = useState({
@@ -87,26 +86,30 @@ export function RegisterForm() {
     }
 
     try {
-      const { user, error: authError } = await authService.signUp({
-        matric_no: formData.matricNo,
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email,
+          name: formData.name,
+          matric_no: formData.matricNo,
+          password: formData.password,
+        }),
       })
 
-      if (authError) {
-        setError(authError)
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.error || 'Registration failed')
         return
       }
 
-      if (user) {
-        setSuccess(true)
-      } else {
-        setError("Registration failed. Please try again.")
-      }
+      setSuccess(true)
     } catch (err) {
-      console.error("Registration error:", err)
-      setError("An unexpected error occurred during registration.")
+      console.error('Registration error:', err)
+      setError('An unexpected error occurred during registration.')
     } finally {
       setLoading(false)
     }

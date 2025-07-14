@@ -1,7 +1,11 @@
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import { supabaseOperations } from "./supabase"
+import jwt from 'jsonwebtoken'
+import User, { IUser } from '@/models/User'
+import EligibleVoter from '@/models/EligibleVoter'
+import connectDB from '@/lib/mongodb'
 
-export interface User {
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
+
+export interface AuthUser {
   id: string
   email: string
   name: string
@@ -10,59 +14,37 @@ export interface User {
 }
 
 export class AuthService {
-  private supabase = createClientComponentClient()
-
-  async signIn(email: string, password: string): Promise<{ user: User | null; error: string | null }> {
+  async signIn(email: string, password: string): Promise<{ user: AuthUser | null; error: string | null; token?: string }> {
     try {
-      const { data, error: authError } = await this.supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      await connectDB()
 
-      if (authError) {
-        console.error("Supabase signIn error:", authError)
-        return { user: null, error: authError.message }
+      const user = await User.findOne({ email: email.toLowerCase() })
+      if (!user) {
+        return { user: null, error: "Invalid email or password" }
       }
 
-      if (!data.user) {
-        return { user: null, error: "Authentication failed: No user data returned." }
+      const isPasswordValid = await user.comparePassword(password)
+      if (!isPasswordValid) {
+        return { user: null, error: "Invalid email or password" }
       }
 
-      // Fetch profile by ID
-      let { data: profile, error: profileError } = await this.supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", data.user.id)
-        .single()
+      const token = jwt.sign(
+        { userId: user._id, email: user.email, role: user.role },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      )
 
-      // Fallback: Try fetching by email
-      if (profileError || !profile) {
-        const alt = await this.supabase
-          .from("profiles")
-          .select("*")
-          .eq("email", data.user.email)
-          .single()
-
-        profile = alt.data
-        profileError = alt.error
+      const authUser: AuthUser = {
+        id: user._id.toString(),
+        email: user.email,
+        name: user.name,
+        matric_no: user.matric_no,
+        role: user.role,
       }
 
-      if (profileError || !profile) {
-        console.error("Supabase profile fetch error:", profileError)
-        return { user: null, error: "Failed to retrieve user profile." }
-      }
-
-      const currentUser: User = {
-        id: profile.id,
-        email: profile.email,
-        name: profile.name,
-        matric_no: profile.matric_no,
-        role: profile.role,
-      }
-
-      return { user: currentUser, error: null }
+      return { user: authUser, error: null, token }
     } catch (error) {
-      console.error("Unexpected signIn error:", error)
+      console.error("Sign in error:", error)
       return { user: null, error: "An unexpected error occurred during sign-in." }
     }
   }
@@ -72,96 +54,116 @@ export class AuthService {
     name: string
     matric_no: string
     password: string
-  }): Promise<{ user: User | null; error: string | null }> {
+  }): Promise<{ user: AuthUser | null; error: string | null; token?: string }> {
     try {
+      await connectDB()
+
       // Normalize matric number input
-      const normalizedInput = userData.matric_no.trim().toUpperCase()
+      const normalizedMatricNo = userData.matric_no.trim().toUpperCase()
 
-      // Fetch eligible voters and check
-      const eligibleVoters = await supabaseOperations.getEligibleVoters()
-      const isEligible = eligibleVoters.some(
-        (v) => v.matric_no.trim().toUpperCase() === normalizedInput
-      )
-
-      if (!isEligible) {
+      // Check if matric number is in eligible voters list
+      const eligibleVoter = await EligibleVoter.findOne({ matric_no: normalizedMatricNo })
+      if (!eligibleVoter) {
         return { user: null, error: "Matric number not found in eligible voters list" }
       }
 
-      // Sign up user with Supabase Auth
-      const { data, error: authError } = await this.supabase.auth.signUp({
-        email: userData.email,
-        password: userData.password,
-        options: {
-          data: {
-            name: userData.name,
-          },
-        },
+      // Check if user already exists
+      const existingUser = await User.findOne({
+        $or: [
+          { email: userData.email.toLowerCase() },
+          { matric_no: normalizedMatricNo }
+        ]
       })
 
-      if (authError) {
-        console.error("Supabase signUp error:", authError)
-        return { user: null, error: authError.message }
+      if (existingUser) {
+        return { user: null, error: "User with this email or matric number already exists" }
       }
 
-      if (!data.user) {
-        return { user: null, error: "Registration failed: No user data returned." }
+      // Create new user
+      const newUser = new User({
+        email: userData.email.toLowerCase(),
+        name: userData.name,
+        matric_no: normalizedMatricNo,
+        password: userData.password,
+        role: 'user'
+      })
+
+      await newUser.save()
+
+      const token = jwt.sign(
+        { userId: newUser._id, email: newUser.email, role: newUser.role },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      )
+
+      const authUser: AuthUser = {
+        id: newUser._id.toString(),
+        email: newUser.email,
+        name: newUser.name,
+        matric_no: newUser.matric_no,
+        role: newUser.role,
       }
 
-      // Insert into 'profiles' table
-      const { data: profile, error: profileError } = await this.supabase
-        .from("profiles")
-        .insert([
-          {
-            id: data.user.id,
-            email: userData.email,
-            name: userData.name,
-            matric_no: normalizedInput,
-            role: "user",
-          },
-        ])
-        .select("*")
-        .single()
-
-      if (profileError || !profile) {
-        console.error("Supabase profile insert error:", profileError)
-        console.warn("Profile creation failed. Manual cleanup may be needed.") // ✅ Safe fallback
-        return { user: null, error: "Failed to create user profile after registration." }
+      return { user: authUser, error: null, token }
+    } catch (error: any) {
+      console.error("Sign up error:", error)
+      if (error.code === 11000) {
+        return { user: null, error: "User with this email or matric number already exists" }
       }
-
-      const newUser: User = {
-        id: profile.id,
-        email: profile.email,
-        name: profile.name,
-        matric_no: profile.matric_no,
-        role: profile.role,
-      }
-
-      return { user: newUser, error: null }
-    } catch (error) {
-      console.error("Unexpected signUp error:", error)
       return { user: null, error: "An unexpected error occurred during registration." }
     }
   }
 
-  async signOut() {
-    await this.supabase.auth.signOut()
-    localStorage.removeItem("currentUser")
+  async verifyToken(token: string): Promise<{ user: AuthUser | null; error: string | null }> {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as any
+      
+      await connectDB()
+      const user = await User.findById(decoded.userId)
+      
+      if (!user) {
+        return { user: null, error: "User not found" }
+      }
+
+      const authUser: AuthUser = {
+        id: user._id.toString(),
+        email: user.email,
+        name: user.name,
+        matric_no: user.matric_no,
+        role: user.role,
+      }
+
+      return { user: authUser, error: null }
+    } catch (error) {
+      return { user: null, error: "Invalid token" }
+    }
   }
 
-  getCurrentUser(): User | null {
+  getCurrentUser(): AuthUser | null {
+    if (typeof window === 'undefined') return null
+    
     const userData = localStorage.getItem("currentUser")
     return userData ? JSON.parse(userData) : null
   }
 
-  setCurrentUser(user: User) {
+  setCurrentUser(user: AuthUser, token: string) {
+    if (typeof window === 'undefined') return
+    
     localStorage.setItem("currentUser", JSON.stringify(user))
+    localStorage.setItem("authToken", token)
   }
 
-  async getSupabaseUser() {
-    const {
-      data: { user },
-    } = await this.supabase.auth.getUser()
-    return user
+  signOut() {
+    if (typeof window === 'undefined') return
+    
+    localStorage.removeItem("currentUser")
+    localStorage.removeItem("authToken")
+  }
+
+  getToken(): string | null {
+    if (typeof window === 'undefined') return null
+    
+    return localStorage.getItem("authToken")
   }
 }
 

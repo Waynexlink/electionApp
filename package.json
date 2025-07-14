@@ -6,8 +6,7 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
-    "start": "next start",
-    "init-db": "node scripts/initialize-database.js"
+    "start": "next start"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -38,10 +37,9 @@
     "@radix-ui/react-toggle": "1.1.1",
     "@radix-ui/react-toggle-group": "1.1.1",
     "@radix-ui/react-tooltip": "1.1.6",
-    "@supabase/auth-helpers-nextjs": "latest",
-    "@supabase/supabase-js": "latest",
     "@vercel/blob": "latest",
     "autoprefixer": "^10.4.20",
+    "bcryptjs": "^2.4.3",
     "child_process": "latest",
     "class-variance-authority": "^0.7.1",
     "cloudinary": "latest",
@@ -51,7 +49,9 @@
     "dotenv": "latest",
     "embla-carousel-react": "8.5.1",
     "input-otp": "1.4.1",
+    "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.454.0",
+    "mongoose": "^8.0.3",
     "next": "14.2.16",
     "next-themes": "^0.4.4",
     "react": "^18",
@@ -67,6 +67,8 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^22",
     "@types/react": "^18",
     "@types/react-dom": "^18",

@@ -6,24 +6,19 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Users, CheckCircle, Clock, Vote, ArrowRight } from "lucide-react"
 import Link from "next/link"
-import { createClient } from "@supabase/supabase-js"
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 interface Post {
-  id: string
+  _id: string
   title: string
   description: string
   candidates: Array<{
-    id: string
+    _id: string
     name: string
   }>
   user_voted: boolean
 }
 
 interface PostsListPersistentProps {
-  electionId?: string
   userId: string
 }
 
@@ -31,59 +26,44 @@ export function PostsListPersistent({ userId }: PostsListPersistentProps) {
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
   useEffect(() => {
     const fetchPosts = async () => {
       try {
-        const { data: elections, error: electionsError } = await supabase
-          .from("elections")
-          .select("id")
-          .eq("is_active", true)
-          .limit(1)
-
-        if (electionsError) throw electionsError
+        // Get active elections
+        const electionsResponse = await fetch('/api/elections')
+        const elections = await electionsResponse.json()
+        
         if (!elections || elections.length === 0) {
           setLoading(false)
           return
         }
 
-        const electionId = elections[0].id
+        const electionId = elections[0]._id
 
-        const { data: electionPosts, error: postsError } = await supabase
-          .from("posts")
-          .select("*")
-          .eq("election_id", electionId)
-          .order("title")
+        // Get posts for this election
+        const postsResponse = await fetch(`/api/posts?electionId=${electionId}`)
+        const electionPosts = await postsResponse.json()
 
-        if (postsError) throw postsError
+        // Get all candidates
+        const candidatesResponse = await fetch('/api/candidates')
+        const allCandidates = await candidatesResponse.json()
 
-        const { data: allCandidates, error: candidatesError } = await supabase
-          .from("candidates")
-          .select("id, name, post_id")
+        // Get user votes
+        const votesResponse = await fetch(`/api/votes/user/${userId}`)
+        const userVotes = votesResponse.ok ? await votesResponse.json() : []
 
-        if (candidatesError) throw candidatesError
+        const votedPostIds = new Set(userVotes.map((v: any) => v.post_id))
 
-        const { data: userVotes, error: votesError } = await supabase
-          .from("votes")
-          .select("post_id")
-          .eq("user_id", userId)
+        const postsWithCandidates = electionPosts.map((post: any) => {
+          const candidates = allCandidates.filter((c: any) => c.post_id === post._id)
+          const userVoted = votedPostIds.has(post._id)
 
-        if (votesError) throw votesError
-
-        const votedPostIds = new Set(userVotes?.map((v) => v.post_id) || [])
-
-        const postsWithCandidates =
-          electionPosts?.map((post) => {
-            const candidates = allCandidates?.filter((c) => c.post_id === post.id) || []
-            const userVoted = votedPostIds.has(post.id)
-
-            return {
-              ...post,
-              candidates: candidates.map((c) => ({ id: c.id, name: c.name })),
-              user_voted: userVoted,
-            }
-          }) || []
+          return {
+            ...post,
+            candidates: candidates.map((c: any) => ({ _id: c._id, name: c.name })),
+            user_voted: userVoted,
+          }
+        })
 
         setPosts(postsWithCandidates)
       } catch (error) {
@@ -132,7 +112,7 @@ export function PostsListPersistent({ userId }: PostsListPersistentProps) {
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
       {posts.map((post, index) => (
         <Card
-          key={post.id}
+          key={post._id}
           className={`glass-card border-0 shadow-lg rounded-2xl transition-all duration-300 hover:shadow-xl hover:scale-[1.02] group ${
             post.user_voted
               ? "ring-2 ring-emerald-500 bg-gradient-to-br from-emerald-50 to-green-50"
@@ -170,7 +150,7 @@ export function PostsListPersistent({ userId }: PostsListPersistentProps) {
             </div>
 
             {post.user_voted ? (
-              <Link href={`/results/${post.id}`}>
+              <Link href={`/results/${post._id}`}>
                 <Button
                   variant="outline"
                   className="w-full h-12 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 rounded-xl font-semibold transition-all duration-200 group bg-transparent"
@@ -180,7 +160,7 @@ export function PostsListPersistent({ userId }: PostsListPersistentProps) {
                 </Button>
               </Link>
             ) : (
-              <Link href={`/vote/${post.id}`}>
+              <Link href={`/vote/${post._id}`}>
                 <Button className="w-full h-12 bg-green-gradient hover:shadow-lg hover:shadow-emerald-500/25 text-white font-semibold rounded-xl transition-all duration-300 transform hover:scale-[1.02] group">
                   Vote Now
                   <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />

@@ -3,6 +3,8 @@ import mongoose from 'mongoose'
 const MONGODB_URI = process.env.MONGODB_URI
 
 if (!MONGODB_URI || MONGODB_URI.length === 0) {
+  console.error('❌ MONGODB_URI environment variable is not defined')
+  console.error('Please create a .env.local file with MONGODB_URI=your-connection-string')
   throw new Error('Please define the MONGODB_URI environment variable inside .env.local')
 }
 

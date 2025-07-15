@@ -6,21 +6,20 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Users, CheckCircle, Clock, Vote, ArrowRight } from "lucide-react"
 import Link from "next/link"
-import { mockData } from "@/lib/supabase"
 
 interface Post {
-  id: string
+  _id: string
   title: string
   description: string
   candidates: Array<{
-    id: string
+    _id: string
     name: string
   }>
   user_voted: boolean
 }
 
 interface PostsListProps {
-  electionId: string
+  electionId?: string
   userId: string
 }
 
@@ -30,32 +29,58 @@ export function PostsList({ electionId, userId }: PostsListProps) {
 
   useEffect(() => {
     const fetchPosts = async () => {
-      if (!electionId) return
-
-      // Get posts for this election
-      const electionPosts = mockData.posts.filter((p) => p.election_id === electionId)
-
-      // Get user votes from localStorage
-      const userVotes = JSON.parse(localStorage.getItem("userVotes") || "{}")
-
-      // Get candidates for each post
-      const postsWithCandidates = electionPosts.map((post) => {
-        const candidates = mockData.candidates
-          .filter((c) => c.post_id === post.id)
-          .map((c) => ({ id: c.id, name: c.name }))
-
-        // Check if user has voted for this post
-        const userVoted = !!userVotes[post.id]
-
-        return {
-          ...post,
-          candidates,
-          user_voted: userVoted,
+      try {
+        // Get active elections if no electionId provided
+        let currentElectionId = electionId
+        if (!currentElectionId) {
+          const electionsResponse = await fetch('/api/elections')
+          const elections = await electionsResponse.json()
+          if (elections && elections.length > 0) {
+            currentElectionId = elections[0]._id
+          }
         }
-      })
 
-      setPosts(postsWithCandidates)
-      setLoading(false)
+        if (!currentElectionId) {
+          setLoading(false)
+          return
+        }
+
+        // Get posts for this election
+        const postsResponse = await fetch(`/api/posts?electionId=${currentElectionId}`)
+        const electionPosts = await postsResponse.json()
+
+        // Get all candidates
+        const candidatesResponse = await fetch('/api/candidates')
+        const allCandidates = await candidatesResponse.json()
+
+        // Get user votes from server (secure)
+        const token = localStorage.getItem('authToken')
+        const votesResponse = await fetch(`/api/votes/user/${userId}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        })
+        const userVotes = votesResponse.ok ? await votesResponse.json() : []
+
+        const votedPostIds = new Set(userVotes.map((v: any) => v.post_id))
+
+        const postsWithCandidates = electionPosts.map((post: any) => {
+          const candidates = allCandidates.filter((c: any) => c.post_id === post._id)
+          const userVoted = votedPostIds.has(post._id)
+
+          return {
+            ...post,
+            candidates: candidates.map((c: any) => ({ _id: c._id, name: c.name })),
+            user_voted: userVoted,
+          }
+        })
+
+        setPosts(postsWithCandidates)
+      } catch (error) {
+        console.error("Error fetching posts:", error)
+      } finally {
+        setLoading(false)
+      }
     }
 
     fetchPosts()
@@ -97,15 +122,13 @@ export function PostsList({ electionId, userId }: PostsListProps) {
     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
       {posts.map((post, index) => (
         <Card
-          key={post.id}
+          key={post._id}
           className={`glass-card border-0 shadow-lg rounded-2xl transition-all duration-300 hover:shadow-xl hover:scale-[1.02] group ${
             post.user_voted
               ? "ring-2 ring-emerald-500 bg-gradient-to-br from-emerald-50 to-green-50"
               : "hover:ring-2 hover:ring-emerald-200"
           }`}
-          style={{
-            animationDelay: `${index * 0.1}s`,
-          }}
+          style={{ animationDelay: `${index * 0.1}s` }}
         >
           <CardHeader className="pb-4">
             <div className="flex items-start justify-between">
@@ -137,7 +160,7 @@ export function PostsList({ electionId, userId }: PostsListProps) {
             </div>
 
             {post.user_voted ? (
-              <Link href={`/results/${post.id}`}>
+              <Link href={`/results/${post._id}`}>
                 <Button
                   variant="outline"
                   className="w-full h-12 border-emerald-200 text-emerald-700 hover:bg-emerald-50 hover:border-emerald-300 rounded-xl font-semibold transition-all duration-200 group bg-transparent"
@@ -147,7 +170,7 @@ export function PostsList({ electionId, userId }: PostsListProps) {
                 </Button>
               </Link>
             ) : (
-              <Link href={`/vote/${post.id}`}>
+              <Link href={`/vote/${post._id}`}>
                 <Button className="w-full h-12 bg-green-gradient hover:shadow-lg hover:shadow-emerald-500/25 text-white font-semibold rounded-xl transition-all duration-300 transform hover:scale-[1.02] group">
                   Vote Now
                   <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />

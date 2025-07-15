@@ -6,7 +6,15 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 
 export function middleware(request: NextRequest) {
   // Only protect API routes that need authentication
-  if (request.nextUrl.pathname.startsWith('/api/protected/')) {
+  if (request.nextUrl.pathname.startsWith('/api/votes') || 
+      request.nextUrl.pathname.startsWith('/api/users') ||
+      request.nextUrl.pathname.startsWith('/api/eligible-voters')) {
+    
+    // Skip authentication for public routes
+    if (request.nextUrl.pathname.includes('/results/') && request.method === 'GET') {
+      return NextResponse.next()
+    }
+    
     const token = request.headers.get('authorization')?.replace('Bearer ', '')
     
     if (!token) {
@@ -25,5 +33,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/api/protected/:path*']
+  matcher: ['/api/votes/:path*', '/api/users/:path*', '/api/eligible-voters/:path*']
 }

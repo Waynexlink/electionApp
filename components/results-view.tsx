@@ -1,12 +1,9 @@
 "use client"
 
-import { CardFooter } from "@/components/ui/card"
-
 import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
-import { supabaseOperations } from "@/lib/supabase"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/hooks/use-toast"
 import Image from "next/image"
@@ -14,7 +11,7 @@ import { XCircle } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 interface CandidateResult {
-  id: string
+  _id: string
   name: string
   department: string
   image_url?: string
@@ -23,7 +20,7 @@ interface CandidateResult {
 }
 
 interface Post {
-  id: string
+  _id: string
   title: string
   description: string
   election_id: string
@@ -31,9 +28,10 @@ interface Post {
 
 interface ResultsViewProps {
   postId: string
+  userVoteId?: string
 }
 
-export function ResultsView({ postId }: ResultsViewProps) {
+export function ResultsView({ postId, userVoteId }: ResultsViewProps) {
   const [post, setPost] = useState<Post | null>(null)
   const [results, setResults] = useState<{ candidates: CandidateResult[]; total_votes: number } | null>(null)
   const [loading, setLoading] = useState(true)
@@ -45,12 +43,14 @@ export function ResultsView({ postId }: ResultsViewProps) {
       setLoading(true)
       try {
         // Fetch the specific post details
-        const allPosts = await supabaseOperations.getPosts("") // Fetch all posts to find the specific one
-        const currentPost = allPosts.find((p: Post) => p.id === postId)
+        const postsResponse = await fetch('/api/posts')
+        const allPosts = await postsResponse.json()
+        const currentPost = allPosts.find((p: Post) => p._id === postId)
         setPost(currentPost || null)
 
         // Fetch results for the specific post
-        const data = await supabaseOperations.getPostResults(postId)
+        const resultsResponse = await fetch(`/api/votes/results/${postId}`)
+        const data = await resultsResponse.json()
         setResults(data)
       } catch (error) {
         console.error("Error fetching results:", error)
@@ -75,16 +75,12 @@ export function ResultsView({ postId }: ResultsViewProps) {
           <Skeleton className="h-4 w-1/2 mx-auto" />
         </CardHeader>
         <CardContent className="space-y-6">
-          <Skeleton className="h-48 w-full" />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
             {[1, 2, 3, 4].map((i) => (
               <Skeleton key={i} className="h-24 w-full" />
             ))}
           </div>
         </CardContent>
-        <CardFooter className="flex justify-center">
-          <Skeleton className="h-10 w-32" />
-        </CardFooter>
       </Card>
     )
   }
@@ -111,21 +107,28 @@ export function ResultsView({ postId }: ResultsViewProps) {
       <CardContent className="space-y-6 px-8">
         {results?.candidates && results.candidates.length > 0 ? (
           results.candidates.map((candidate) => (
-            <div key={candidate.id} className="flex items-center gap-4">
+            <div key={candidate._id} className="flex items-center gap-4">
               {candidate.image_url && (
                 <div className="relative w-16 h-16 rounded-full overflow-hidden border border-gray-200 shrink-0">
                   <Image
                     src={candidate.image_url || "/placeholder.svg"}
                     alt={candidate.name}
-                    layout="fill"
-                    objectFit="cover"
+                    fill
+                    style={{ objectFit: 'cover' }}
                     className="rounded-full"
                   />
                 </div>
               )}
               <div className="flex-1">
                 <div className="flex justify-between items-center mb-1">
-                  <h3 className="text-lg font-semibold text-gray-800">{candidate.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-semibold text-gray-800">{candidate.name}</h3>
+                    {userVoteId === candidate._id && (
+                      <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">
+                        Your Vote
+                      </span>
+                    )}
+                  </div>
                   <span className="text-lg font-bold text-emerald-600">{candidate.percentage.toFixed(2)}%</span>
                 </div>
                 <Progress value={candidate.percentage} className="h-3 bg-gray-200" />
@@ -139,9 +142,9 @@ export function ResultsView({ postId }: ResultsViewProps) {
           <p className="text-center text-muted-foreground">No candidates or votes recorded for this post yet.</p>
         )}
       </CardContent>
-      <CardFooter className="flex justify-center px-8 pb-8">
+      <div className="flex justify-center px-8 pb-8">
         <Button onClick={() => router.push("/dashboard")}>Return to Dashboard</Button>
-      </CardFooter>
+      </div>
     </Card>
   )
 }
